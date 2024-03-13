@@ -86,7 +86,7 @@ param (
 )
 
 # Import the Configuration Manager PowerShell Module
-Import-Module -Name "$ENV:SMS_ADMIN_UI_PATH\..\ConfigurationManager.psd1"
+Import-Module -Name "$ENV:SMS_ADMIN_UI_PATH\..\ConfigurationManager.psd1" -ErrorAction Stop
 
 # Set the current location to the SMS Site Code PowerShell Drive
 Set-Location "$($SiteCode):"
