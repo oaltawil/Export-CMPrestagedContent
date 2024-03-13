@@ -1,5 +1,5 @@
 # Export-CMPrestagedContent
-A sample script to generate prestaged content files (.pkgx) from a Configuration Manager distribution point.
+A sample script to generate prestaged content files (.pkgx) from a Configuration Manager distribution point. The script must be executed on a computer that has the Microsoft Configuration Manager Administrative Console installed.
 
 Examples:
 
