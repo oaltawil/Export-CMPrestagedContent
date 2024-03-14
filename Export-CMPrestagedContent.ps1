@@ -28,9 +28,9 @@ if Microsoft has been advised of the possibility of such damages.
 This sample script creates Prestaged Content files (.pkgx) from Applications, Boot Images, (Software Update) Deployment Packages, Driver Packages, Operating System Images, Operating System Installers, and Packages that are located on a source Distribution Point.
 
 .DESCRIPTION
-The script requires the FQDN of a source Distribution Point that contains the desired Applications, Boot Images, (Software Update) Deployment Packages, etc. and the full path to a destination folder where all prestaged content files (.pkgx) will be created. 
+The script requires the SMS Site Code, the FQDN of a source Distribution Point that contains the desired Applications, Boot Images, (Software Update) Deployment Packages, etc. and the full path to a destination folder where all prestaged content files (.pkgx) will be created. 
 
-The script also requires the desired Content Type and, optionally, the Package Id's of the Items that belong to that Content Type.
+The script also requires the desired Content Type and the Package Id's of the Items that belong to that Content Type.
 
 The script supports only one Content Type from the following list:
  - Application
@@ -41,7 +41,7 @@ The script supports only one Content Type from the following list:
  - OperatingSystemInstaller
  - Package
 
-The user can optionally specify the Package ID's of Applications, Boot Images, (Software Update) Deployment Packages, etc. that belong to that one specific Content Type.
+The user must also specify the Package ID's of Applications, Boot Images, (Software Update) Deployment Packages, etc. that belong to that specific Content Type.
 
 .PARAMETER SiteCode
 Configuration Manager Site Code.
@@ -65,15 +65,25 @@ One of the supported CM content types:
 .PARAMETER PackageIds
 A list of the Package IDs of the desired CM Items that being to the specified Content Type
 
-.EXAMPLE
-Generate Prestaged Content Files (.pkgx) from all Applications that are located on the Distribution Point "MCM-01.poltis.ca" and save them to the Output Folder "E:\PrestagedContent"
+.PARAMETER InputFilePath
+The full path to a comma-separated value file with 2 column headers: ContentType and PackageId
 
-Export-CMPrestagedContent -SiteCode PTS -SourceDistributionPoint MCM-01.poltis.ca -OutputFolderPath E:\PrestagedContent -ContentType Application
+Example:
+ContentType, PackageId
+Application, PTS0000A
+Application, PTS0000C
+BootImage, PTS00003
+Package, PTS00001
 
 .EXAMPLE
 Generate Prestaged Content Files (.pkgx) from the Applications that have the specified Package IDs and that are located on the Distribution Point "MCM-01.poltis.ca" and save them to the Output Folder "E:\PrestagedContent"
 
 Export-CMPrestagedContent -SiteCode PTS -SourceDistributionPoint MCM-01.poltis.ca -OutputFolderPath E:\PrestagedContent -ContentType Application -PackageIds PTS00009, PTS0000C, PTS0000D
+
+.EXAMPLE
+Generate Prestaged Content Files (.pkgx) based on the Content Type and Package Ids that are specified in the CSV input file "ContentTypesPackageIds.csv" and save them to the Output Folder "E:\PrestagedContent"
+
+Export-CMPrestagedContent -SiteCode PTS -SourceDistributionPoint MCM-01.poltis.ca -OutputFolderPath E:\PrestagedContent -InputFilePath ".\ContentTypesPackageIds.csv"
 
 #>
 
@@ -109,7 +119,7 @@ param (
 
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
 # Import the Configuration Manager PowerShell Module
 Import-Module -Name "$ENV:SMS_ADMIN_UI_PATH\..\ConfigurationManager.psd1" -ErrorAction Stop
@@ -139,8 +149,11 @@ switch ($ContentType) {
                 Write-Error "Failed to find the Application with Package Id $PackageId"
 
             }
-
-            Publish-CMPrestageContent -Application $Application -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            else {
+            
+                Publish-CMPrestageContent -Application $Application -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            
+            }
         
         }
 
@@ -160,9 +173,11 @@ switch ($ContentType) {
                 Write-Error "Failed to find the Boot Image with Package Id $PackageId"
 
             }
+            else {
 
-            Publish-CMPrestageContent -BootImage $BootImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
-        
+                Publish-CMPrestageContent -BootImage $BootImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            
+            }
         }
 
     }
@@ -181,9 +196,11 @@ switch ($ContentType) {
                 Write-Error "Failed to find the (Software Update) Deployment Package with Package Id $PackageId"
 
             }
+            else {
 
-            Publish-CMPrestageContent -DeploymentPackage $DeploymentPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
-        
+                Publish-CMPrestageContent -DeploymentPackage $DeploymentPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            
+            }
         }
         
     }
@@ -202,9 +219,11 @@ switch ($ContentType) {
                 Write-Error "Failed to find the Driver Package with Package Id $PackageId"
 
             }
+            else {
+                
+                Publish-CMPrestageContent -DriverPackage $DriverPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            }
 
-            Publish-CMPrestageContent -DriverPackage $DriverPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
-        
         }
 
     }
@@ -223,8 +242,11 @@ switch ($ContentType) {
                 Write-Error "Failed to find the Operating System Image with Package Id $PackageId"
 
             }
+            else {
 
-            Publish-CMPrestageContent -OperatingSystemImage $OperatingSystemImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+                Publish-CMPrestageContent -OperatingSystemImage $OperatingSystemImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            
+            }
         
         }
     
@@ -244,8 +266,11 @@ switch ($ContentType) {
                 Write-Error "Failed to find the Operating System Installer with Package Id $PackageId"
 
             }
-
-            Publish-CMPrestageContent -OperatingSystemInstaller $OperatingSystemInstaller -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            else {
+            
+                Publish-CMPrestageContent -OperatingSystemInstaller $OperatingSystemInstaller -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+        
+            }
         
         }
 
@@ -265,8 +290,11 @@ switch ($ContentType) {
                 Write-Error "Failed to find the (Legacy Software Distribution) Package with Package Id $PackageId"
 
             }
-
-            Publish-CMPrestageContent -Package $Package -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            else {
+            
+                Publish-CMPrestageContent -Package $Package -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            
+            }
         
         }
         
