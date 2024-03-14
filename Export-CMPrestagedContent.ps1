@@ -66,7 +66,7 @@ One of the supported CM content types:
 A list of the Package IDs of the desired CM Items that being to the specified Content Type
 
 .PARAMETER InputFilePath
-The full path to a comma-separated value file with 2 column headers: ContentType and PackageId
+** This parameter is currently ignored ** The full path to a comma-separated value file with 2 column headers: ContentType and PackageId
 
 Example:
 ContentType, PackageId
@@ -79,11 +79,6 @@ Package, PTS00001
 Generate Prestaged Content Files (.pkgx) from the Applications that have the specified Package IDs and that are located on the Distribution Point "MCM-01.poltis.ca" and save them to the Output Folder "E:\PrestagedContent"
 
 Export-CMPrestagedContent -SiteCode PTS -SourceDistributionPoint MCM-01.poltis.ca -OutputFolderPath E:\PrestagedContent -ContentType Application -PackageIds PTS00009, PTS0000C, PTS0000D
-
-.EXAMPLE
-Generate Prestaged Content Files (.pkgx) based on the Content Type and Package Ids that are specified in the CSV input file "ContentTypesPackageIds.csv" and save them to the Output Folder "E:\PrestagedContent"
-
-Export-CMPrestagedContent -SiteCode PTS -SourceDistributionPoint MCM-01.poltis.ca -OutputFolderPath E:\PrestagedContent -InputFilePath ".\ContentTypesPackageIds.csv"
 
 #>
 
