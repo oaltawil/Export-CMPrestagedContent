@@ -28,7 +28,7 @@ This sample script creates Prestaged Content files (.pkgx) from Applications, Bo
 .DESCRIPTION
 The script requires the SMS Site Code, the FQDN of a source Distribution Point that contains the desired Applications, Boot Images, (Software Update) Deployment Packages, etc. and the full path to a destination folder where all prestaged content files (.pkgx) will be created. 
 
-The script can be used in two ways:
+The script can be used in two different ways:
 
 1. The first method to use the script is to provide it with the desired Content Type and the Package Id's of the Items that belong to that Content Type.
 
@@ -43,7 +43,7 @@ The script supports the following Content Types:
 
 The user must also specify the Package ID's of Applications, Boot Images, (Software Update) Deployment Packages, etc. that belong to that specific Content Type.
 
-2. The second method is to specify the full path to a CSV file with records for the ContentType and PackageId:
+2. The second method is to specify the full path to a CSV file that contains records for the ContentType and PackageId:
 ContentType, PackageId
 Application, PTS0000A
 Application, PTS0000C
@@ -87,35 +87,40 @@ Generate Prestaged Content Files (.pkgx) from the Applications that have the spe
 
 Export-CMPrestagedContent -SiteCode PTS -SourceDistributionPoint MCM-01.poltis.ca -OutputFolderPath E:\PrestagedContent -ContentType Application -PackageIds PTS00009, PTS0000C, PTS0000D
 
+.EXAMPLE
+Generate Prestaged Content Files (.pkgx) based on the information (Content Type and Package Id) stored in the CSV input file "ContentItems.csv" and save them to the Output Folder "E:\PrestagedContent"
+
+Export-CMPrestagedContent -SiteCode PTS -SourceDistributionPoint MCM-01.poltis.ca -OutputFolderPath E:\PrestagedContent -InputFilePath .\ContentItems.csv
+
 #>
 
-[CmdletBinding(DefaultParameterSetName = 'ContentTypePackageIds')]
+[CmdletBinding(DefaultParameterSetName = 'PackageIds')]
 param (
-    [Parameter(Position = 0, ParameterSetName='ContentTypePackageIds', Mandatory=$true)]
-    [Parameter(Position = 0, ParameterSetName='InputFilePath', Mandatory=$true)]
+    [Parameter(Position = 0, ParameterSetName='PackageIds', Mandatory=$true)]
+    [Parameter(Position = 0, ParameterSetName='InputFile', Mandatory=$true)]
     [String]
     $SiteCode,
 
-    [Parameter(Position = 1, ParameterSetName='ContentTypePackageIds', Mandatory=$true)]
-    [Parameter(Position = 1, ParameterSetName='InputFilePath', Mandatory=$true)]
+    [Parameter(Position = 1, ParameterSetName='PackageIds', Mandatory=$true)]
+    [Parameter(Position = 1, ParameterSetName='InputFile', Mandatory=$true)]
     [String]
     $SourceDistributionPoint,
 
-    [Parameter(Position = 2, ParameterSetName='ContentTypePackageIds', Mandatory=$true)]
-    [Parameter(Position = 2, ParameterSetName='InputFilePath', Mandatory=$true)]
+    [Parameter(Position = 2, ParameterSetName='PackageIds', Mandatory=$true)]
+    [Parameter(Position = 2, ParameterSetName='InputFile', Mandatory=$true)]
     [String]
     $OutputFolderPath,
 
-    [Parameter(Position = 3, ParameterSetName='ContentTypePackageIds', Mandatory=$true)]
+    [Parameter(Position = 3, ParameterSetName='PackageIds', Mandatory=$true)]
     [ValidateSet("Application", "BootImage", "DeploymentPackage", "DriverPackage", "OperatingSystemImage", "OperatingSystemInstaller", "Package")]
     [String]
     $ContentType,
 
-    [Parameter(Position = 4, ParameterSetName='ContentTypePackageIds', Mandatory=$true)]
+    [Parameter(Position = 4, ParameterSetName='PackageIds', Mandatory=$true)]
     [String[]]
     $PackageIds,
 
-    [Parameter(Position = 3, ParameterSetName='InputFilePath', Mandatory=$true)]
+    [Parameter(Position = 3, ParameterSetName='InputFile', Mandatory=$true)]
     [String]
     $InputFilePath
 
@@ -136,7 +141,7 @@ if ($ContentType -and $PackageIds) {
     Export-CMPrestagedFiles -SourceDistributionPoint $SourceDistributionPoint -OutputFolderPath $OutputFolderPath -ContentType $ContentType -PackageIds $PackageIds
 
 }
-# If the user specified the Input File Path parameter
+# If the user specified the InputFilePath parameter
 elseif ($InputFilePath) {
 
     # Verify that the Input File exists
@@ -146,21 +151,20 @@ elseif ($InputFilePath) {
     }
     else {
 
-        # Import the CSV Input File
+        # Import the CSV Input File. Import-CSV creates an array of PSCustomObject objects
         $ContentTypePackgeIds = Import-CSV -Path $InputFilePath
 
-        # Verify the schema of the CSV Input File
-        # Two Note Properties (Static Properties): ContentType and PackageId
+        # Verify the schema of the CSV Input File by retrieveing the Note Properties of the PSCustomObject objects
         $ColumnHeaders = $ContentTypePackgeIds | Get-Member -MemberType NoteProperty | Sort-Object -Property Name
 
-        # Verify that the PSCustomObject objects have 2 properties: DeviceId and DisplayName
+        # Verify that the PSCustomObject objects have two Note (Static) Properties named "ContentType" and "PackageId"
         if (($ColumnHeaders[0].Name -ne "ContentType") -or ($ColumnHeaders[1].Name -ne "PackageId")) {
 
             throw "`nThe script requires a CSV file that has 2 column headers: ContentType and PackageId."
 
         }
 
-        # Group the objects by Content Type and call the Export-CMPrestagedContent function once, for each ContentType
+        # Group the objects by Content Type and call the Export-CMPrestagedFiles function for each ContentType
         $ContentTypeGroups = $ContentTypePackgeIds | Group-Object -Property ContentType
 
         foreach ($ContentTypeGroup in $ContentTypeGroups) {
@@ -168,8 +172,8 @@ elseif ($InputFilePath) {
             # The ContentType is the value of the Name property - the property used for creating the groups
             $ContentType = $ContentTypeGroup.Name
             
-            # Copy the PackageId property of each Group with the same Name (ContentType)
-            $PackageIds = $ContentTypeGroup.Group.PackageId
+            # Copy the PackageId property of each Group that has the same Name (ContentType)
+            $PackageIds = $ContentTypeGroup.Group | ForEach-Object {$_.PackageId}
 
             # Call the Export-CMPrestagedFiles function and pass it the ContentType and PackageIds parameters
             Export-CMPrestagedFiles -SourceDistributionPoint $SourceDistributionPoint -OutputFolderPath $OutputFolderPath -ContentType $ContentType -PackageIds $PackageIds
