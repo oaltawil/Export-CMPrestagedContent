@@ -396,6 +396,8 @@ function Export-CMPrestagedFiles {
 
 $ErrorActionPreference = 'Continue'
 
+$CMPSSuppressFastNotUsedCheck = $true
+
 # Import the Configuration Manager PowerShell Module
 Import-Module -Name "$ENV:SMS_ADMIN_UI_PATH\..\ConfigurationManager.psd1" -ErrorAction Stop
 
