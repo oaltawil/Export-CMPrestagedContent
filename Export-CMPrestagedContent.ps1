@@ -1,7 +1,5 @@
 <#PSScriptInfo
 
-.VERSION 1.0.0.0
-
 .GUID 2d589791-b42a-468d-951a-11e1bb2de7af
 
 .AUTHOR oaltawil@microsoft.com
@@ -30,9 +28,11 @@ This sample script creates Prestaged Content files (.pkgx) from Applications, Bo
 .DESCRIPTION
 The script requires the SMS Site Code, the FQDN of a source Distribution Point that contains the desired Applications, Boot Images, (Software Update) Deployment Packages, etc. and the full path to a destination folder where all prestaged content files (.pkgx) will be created. 
 
-The script also requires the desired Content Type and the Package Id's of the Items that belong to that Content Type.
+The script can be used in two ways:
 
-The script supports only one Content Type from the following list:
+1. The first method to use the script is to provide it with the desired Content Type and the Package Id's of the Items that belong to that Content Type.
+
+The script supports the following Content Types:
  - Application
  - BootImage
  - DeploymentPackage
@@ -42,6 +42,13 @@ The script supports only one Content Type from the following list:
  - Package
 
 The user must also specify the Package ID's of Applications, Boot Images, (Software Update) Deployment Packages, etc. that belong to that specific Content Type.
+
+2. The second method is to specify the full path to a CSV file with records for the ContentType and PackageId:
+ContentType, PackageId
+Application, PTS0000A
+Application, PTS0000C
+BootImage, PTS00003
+Package, PTS00001
 
 .PARAMETER SiteCode
 Configuration Manager Site Code.
@@ -66,7 +73,7 @@ One of the supported CM content types:
 A list of the Package IDs of the desired CM Items that being to the specified Content Type
 
 .PARAMETER InputFilePath
-** This parameter is currently ignored ** The full path to a comma-separated value file with 2 column headers: ContentType and PackageId
+The full path to a comma-separated value file with 2 column headers: ContentType and PackageId
 
 Example:
 ContentType, PackageId
@@ -104,7 +111,7 @@ param (
     [String]
     $ContentType,
 
-    [Parameter(Position = 4, ParameterSetName='ContentTypePackageIds', Mandatory=$false)]
+    [Parameter(Position = 4, ParameterSetName='ContentTypePackageIds', Mandatory=$true)]
     [String[]]
     $PackageIds,
 
@@ -122,178 +129,314 @@ Import-Module -Name "$ENV:SMS_ADMIN_UI_PATH\..\ConfigurationManager.psd1" -Error
 # Set the current location to the SMS Site Code PowerShell Drive
 Set-Location "$($SiteCode):"
 
-# Generate the name of the subfolder for each Content Type, e.g. Applications, BootImages, etc.
-$ContentTypeDirectory = Join-Path $OutputFolderPath $($ContentType + "s")
+# If the user specified the ContentType and PackageIds parameters
+if ($ContentType -and $PackageIds) {
 
-# Create a new subfolder for each Content Type
-New-Item -Path $ContentTypeDirectory -ItemType Directory -Force | Out-Null
+    # Call the Export-CMPrestagedFiles function and pass it the values for the ContentType and PackageIds parameters
+    Export-CMPrestagedFiles -SourceDistributionPoint $SourceDistributionPoint -OutputFolderPath $OutputFolderPath -ContentType $ContentType -PackageIds $PackageIds
 
-switch ($ContentType) {
+}
+# If the user specified the Input File Path parameter
+elseif ($InputFilePath) {
 
-    "Application" {
-
-        $AllApplications = Get-CMApplication
-
-        # Retrieve all Applications with content and matching Package Ids and generate the Prestaged Content File (.pkgx) for each Application
-        foreach ($PackageId in $PackageIds) {
-
-            $Application = $AllApplications | Where-Object {($_.HasContent -eq $true) -and ($_.PackageId -eq $PackageId)}
-
-            if (-not $Application) {
-
-                Write-Error "Failed to find the Application with Package Id $PackageId"
-
-            }
-            else {
-            
-                Publish-CMPrestageContent -Application $Application -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
-            
-            }
+    # Verify that the Input File exists
+    if (-not (Test-Path -Path $InputFilePath)) {
         
+        throw "`nFailed to find the CSV Input File: $InputFilePath." 
+    }
+    else {
+
+        # Import the CSV Input File
+        $ContentTypePackgeIds = Import-CSV -Path $InputFilePath
+
+        # Verify the schema of the CSV Input File
+        # Two Note Properties (Static Properties): ContentType and PackageId
+        $ColumnHeaders = $ContentTypePackgeIds | Get-Member -MemberType NoteProperty | Sort-Object -Property Name
+
+        # Verify that the PSCustomObject objects have 2 properties: DeviceId and DisplayName
+        if (($ColumnHeaders[0].Name -ne "ContentType") -or ($ColumnHeaders[1].Name -ne "PackageId")) {
+
+            throw "`nThe script requires a CSV file that has 2 column headers: ContentType and PackageId."
+
         }
 
-    }
+        # Group the objects by Content Type and call the Export-CMPrestagedContent function once, for each ContentType
+        $ContentTypeGroups = $ContentTypePackgeIds | Group-Object -Property ContentType
 
-    "BootImage" {
+        foreach ($ContentTypeGroup in $ContentTypeGroups) {
 
-        $AllBootImages = Get-CMBootImage
-
-        # Retrieve all Boot Images with matching Package IDs and export the Prestaged Content File (.pkgx) for each Boot Image
-        foreach ($PackageId in $PackageIds) {
-
-            $BootImage = $AllBootImages | Where-Object {$_.PackageId -eq $PackageId}
-
-            if (-not $BootImage) {
-
-                Write-Error "Failed to find the Boot Image with Package Id $PackageId"
-
-            }
-            else {
-
-                Publish-CMPrestageContent -BootImage $BootImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+            # The ContentType is the value of the Name property - the property used for creating the groups
+            $ContentType = $ContentTypeGroup.Name
             
-            }
+            # Copy the PackageId property of each Group with the same Name (ContentType)
+            $PackageIds = $ContentTypeGroup.Group.PackageId
+
+            # Call the Export-CMPrestagedFiles function and pass it the ContentType and PackageIds parameters
+            Export-CMPrestagedFiles -SourceDistributionPoint $SourceDistributionPoint -OutputFolderPath $OutputFolderPath -ContentType $ContentType -PackageIds $PackageIds
+
         }
 
     }
+}
 
-    "DeploymentPackage" {
+function Export-CMPrestagedFiles {
+    [CmdletBinding()]
+    param (
+        [Parameter(Position = 0, Mandatory=$true)]
+        [String]
+        $SourceDistributionPoint,
+    
+        [Parameter(Position = 1, Mandatory=$true)]
+        [String]
+        $OutputFolderPath,
 
-        $AllDeploymentPackages = Get-CMSoftwareUpdateDeploymentPackage
+        [Parameter(Position = 2, Mandatory=$true)]
+        [ValidateSet("Application", "BootImage", "DeploymentPackage", "DriverPackage", "OperatingSystemImage", "OperatingSystemInstaller", "Package")]
+        [String]
+        $ContentType,
 
-        # Retrieve all (Software Update) Deployment packages with matching Package IDs and export the Prestaged Content File (.pkgx) for each Deployment Package
-        foreach ($PackageId in $PackageIds) {
+        [Parameter(Position = 3, Mandatory=$true)]
+        [String[]]
+        $PackageIds
+    )
 
-            $DeploymentPackage = $AllDeploymentPackages | Where-Object {$_.PackageId -eq $PackageId}
+    # Generate the name of the subfolder for each Content Type, e.g. Applications, BootImages, etc.
+    $ContentTypeDirectory = Join-Path $OutputFolderPath $($ContentType + "s")
 
-            if (-not $DeploymentPackage) {
+    # Create a new subfolder for each Content Type
+    New-Item -Path $ContentTypeDirectory -ItemType Directory -Force | Out-Null
 
-                Write-Error "Failed to find the (Software Update) Deployment Package with Package Id $PackageId"
+    switch ($ContentType) {
 
-            }
-            else {
+        "Application" {
 
-                Publish-CMPrestageContent -DeploymentPackage $DeploymentPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
-            
-            }
-        }
-        
-    }
+            $AllApplications = Get-CMApplication
 
-    "DriverPackage" {
+            # Retrieve all Applications with content and matching Package Ids and generate the Prestaged Content File (.pkgx) for each Application
+            foreach ($PackageId in $PackageIds) {
 
-        $AllDriverPackages = Get-CMDriverPackage
+                $Application = $AllApplications | Where-Object {($_.HasContent -eq $true) -and ($_.PackageId -eq $PackageId)}
 
-        # Retrieve all Driver Packages with matching Package IDs and export the Prestaged Content File (.pkgx) for each Driver Package
-        foreach ($PackageId in $PackageIds) {
+                if (-not $Application) {
 
-            $DriverPackage = $AllDriverPackages | Where-Object {$_.PackageId -eq $PackageId}
+                    Write-Error "Failed to find the Application with Package Id $PackageId."
 
-            if (-not $DriverPackage) {
-
-                Write-Error "Failed to find the Driver Package with Package Id $PackageId"
-
-            }
-            else {
+                }
+                else {
                 
-                Publish-CMPrestageContent -DriverPackage $DriverPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+                    $error.PSBase.Clear()
+
+                    Publish-CMPrestageContent -Application $Application -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+                
+                    if (-not $error) {
+
+                        Write-Host "Successfully exported the Prestaged Content Files for the Application with Package ID $PackageId."
+                        
+                    }
+
+                }
+            
             }
 
         }
 
-    }
+        "BootImage" {
 
-    "OperatingSystemImage" {
-        
-        $AllOperatingSystemImages = Get-CMOperatingSystemImage
+            $AllBootImages = Get-CMBootImage
 
-        # Retrieve all Operating System Images with matching Package IDs and export the Prestaged Content File (.pkgx) for each Operating System Image
-        foreach ($PackageId in $PackageIds) {
+            # Retrieve all Boot Images with matching Package IDs and export the Prestaged Content File (.pkgx) for each Boot Image
+            foreach ($PackageId in $PackageIds) {
 
-            $OperatingSystemImage = $AllOperatingSystemImages | Where-Object {$_.PackageId -eq $PackageId}
+                $BootImage = $AllBootImages | Where-Object {$_.PackageId -eq $PackageId}
 
-            if (-not $OperatingSystemImage) {
+                if (-not $BootImage) {
 
-                Write-Error "Failed to find the Operating System Image with Package Id $PackageId"
+                    Write-Error "Failed to find the Boot Image with Package Id $PackageId."
+
+                }
+                else {
+
+                    $error.PSBase.Clear()
+
+                    Publish-CMPrestageContent -BootImage $BootImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+                
+                    if (-not $error) {
+
+                        Write-Host "Successfully exported the Prestaged Content Files for the Boot Image with Package Id $PackageId."
+                        
+                    }
+
+                }
+            }
+
+        }
+
+        "DeploymentPackage" {
+
+            $AllDeploymentPackages = Get-CMSoftwareUpdateDeploymentPackage
+
+            # Retrieve all (Software Update) Deployment packages with matching Package IDs and export the Prestaged Content File (.pkgx) for each Deployment Package
+            foreach ($PackageId in $PackageIds) {
+
+                $DeploymentPackage = $AllDeploymentPackages | Where-Object {$_.PackageId -eq $PackageId}
+
+                if (-not $DeploymentPackage) {
+
+                    Write-Error "Failed to find the (Software Update) Deployment Package with Package Id $PackageId."
+
+                }
+                else {
+
+                    $error.PSBase.Clear()
+
+                    Publish-CMPrestageContent -DeploymentPackage $DeploymentPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+                    
+                    if (-not $error) {
+
+                        Write-Host "Successfully exported the Prestaged Content Files for the (Software Update) Deployment Package with Package Id $PackageId."
+                    
+                    }
+                    <#
+                    else {
+
+                        Write-Error "Failed to export the Prestaged Content Files for (Software Update) Deployment Package with Package Id $PackageId. `nThe Error Message was: $($Error[0].Exception.Message)`n"
+                    
+                    }
+                    #>
+
+                }
+            }
+            
+        }
+
+        "DriverPackage" {
+
+            $AllDriverPackages = Get-CMDriverPackage
+
+            # Retrieve all Driver Packages with matching Package IDs and export the Prestaged Content File (.pkgx) for each Driver Package
+            foreach ($PackageId in $PackageIds) {
+
+                $DriverPackage = $AllDriverPackages | Where-Object {$_.PackageId -eq $PackageId}
+
+                if (-not $DriverPackage) {
+
+                    Write-Error "Failed to find the Driver Package with Package Id $PackageId."
+
+                }
+                else {
+                    
+                    $error.PSBase.Clear()
+
+                    Publish-CMPrestageContent -DriverPackage $DriverPackage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+
+                    if (-not $error) {
+
+                        Write-Host "Successfully exported the Prestaged Content Files for the Driver Package with Package Id $PackageId."
+                    
+                    }
+
+                }
 
             }
-            else {
 
-                Publish-CMPrestageContent -OperatingSystemImage $OperatingSystemImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+        }
+
+        "OperatingSystemImage" {
             
+            $AllOperatingSystemImages = Get-CMOperatingSystemImage
+
+            # Retrieve all Operating System Images with matching Package IDs and export the Prestaged Content File (.pkgx) for each Operating System Image
+            foreach ($PackageId in $PackageIds) {
+
+                $OperatingSystemImage = $AllOperatingSystemImages | Where-Object {$_.PackageId -eq $PackageId}
+
+                if (-not $OperatingSystemImage) {
+
+                    Write-Error "Failed to find the Operating System Image with Package Id $PackageId."
+
+                }
+                else {
+
+                    $error.PSBase.Clear()
+
+                    Publish-CMPrestageContent -OperatingSystemImage $OperatingSystemImage -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+                
+                    if (-not $error) {
+
+                        Write-Host "Successfully exported the Prestaged Content Files for the Operating System Image with Package Id $PackageId."
+                    
+                    }   
+            
+                }
+        
             }
         
         }
-    
-    }
 
-    "OperatingSystemInstaller" {
+        "OperatingSystemInstaller" {
 
-        $AllOperatingSystemInstallers = Get-CMOperatingSystemInstaller
+            $AllOperatingSystemInstallers = Get-CMOperatingSystemInstaller
 
-        # Retrieve all Operating System Installers with matching Package IDs and export the Prestaged Content File (.pkgx) for each Operating System Installer
-        foreach ($PackageId in $PackageIds) {
+            # Retrieve all Operating System Installers with matching Package IDs and export the Prestaged Content File (.pkgx) for each Operating System Installer
+            foreach ($PackageId in $PackageIds) {
 
-            $OperatingSystemInstaller = $AllOperatingSystemInstallers | Where-Object {$_.PackageId -eq $PackageId}
+                $OperatingSystemInstaller = $AllOperatingSystemInstallers | Where-Object {$_.PackageId -eq $PackageId}
 
-            if (-not $OperatingSystemInstaller) {
+                if (-not $OperatingSystemInstaller) {
 
-                Write-Error "Failed to find the Operating System Installer with Package Id $PackageId"
+                    Write-Error "Failed to find the Operating System Installer with Package Id $PackageId."
 
-            }
-            else {
+                }
+                else {
+                
+                    $error.PSBase.Clear()
+
+                    Publish-CMPrestageContent -OperatingSystemInstaller $OperatingSystemInstaller -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+
+                    if (-not $error) {
+
+                        Write-Host "Successfully exported the Prestaged Content Files for the Operating System Installer with Package Id $PackageId."
+                    
+                    }
+
+                }
             
-                Publish-CMPrestageContent -OperatingSystemInstaller $OperatingSystemInstaller -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
-        
             }
-        
+
         }
 
-    }
-
-    "Package" {
-    
-        $AllPackages = Get-CMPackage
-
-        # Retrieve all (Legacy Software Distribution) Packages with matching Package IDs and export the Prestaged Content File (.pkgx) for each Package
-        foreach ($PackageId in $PackageIds) {
-
-            $Package = $AllPackages | Where-Object {$_.PackageId -eq $PackageId}
-
-            if (-not $Package) {
-
-                Write-Error "Failed to find the (Legacy Software Distribution) Package with Package Id $PackageId"
-
-            }
-            else {
-            
-                Publish-CMPrestageContent -Package $Package -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
-            
-            }
+        "Package" {
         
+            $AllPackages = Get-CMPackage
+
+            # Retrieve all (Legacy Software Distribution) Packages with matching Package IDs and export the Prestaged Content File (.pkgx) for each Package
+            foreach ($PackageId in $PackageIds) {
+
+                $Package = $AllPackages | Where-Object {$_.PackageId -eq $PackageId}
+
+                if (-not $Package) {
+
+                    Write-Error "Failed to find the (Legacy Software Distribution) Package with Package Id $PackageId."
+
+                }
+                else {
+                
+                    $error.PSBase.Clear()
+
+                    Publish-CMPrestageContent -Package $Package -DistributionPointName $SourceDistributionPoint -FileName (Join-Path $ContentTypeDirectory ($PackageId + ".pkgx"))
+                
+                    if (-not $error) {
+
+                        Write-Host "Successfully exported the Prestaged Content Files for the (Legacy Software Distribution) Package with Package Id $PackageId."
+                    
+                    }
+
+                }
+            
+            }
+            
         }
-        
+
     }
 
 }
-
