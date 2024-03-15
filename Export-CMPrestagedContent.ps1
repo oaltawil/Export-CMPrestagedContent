@@ -237,6 +237,13 @@ function Export-CMPrestagedFiles {
                         Write-Host "Successfully exported the Prestaged Content Files for the Application with Package ID $PackageId."
                         
                     }
+                    <#
+                    else {
+
+                        Write-Error "Failed to export the Prestaged Content Files for the Application with Package Id $PackageId. `nThe Error Message was: $($Error[0].Exception.Message)`n"
+                    
+                    }
+                    #>
 
                 }
             
@@ -300,13 +307,6 @@ function Export-CMPrestagedFiles {
                         Write-Host "Successfully exported the Prestaged Content Files for the (Software Update) Deployment Package with Package Id $PackageId."
                     
                     }
-                    <#
-                    else {
-
-                        Write-Error "Failed to export the Prestaged Content Files for (Software Update) Deployment Package with Package Id $PackageId. `nThe Error Message was: $($Error[0].Exception.Message)`n"
-                    
-                    }
-                    #>
 
                 }
             }
